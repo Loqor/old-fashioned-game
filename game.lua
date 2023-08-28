@@ -14,18 +14,18 @@ function BOOT()
 	gravity = 0.2
 	accelx = 0.3
 	decelx = 0.8
-	jump = 2.75
-	maxaccel = 5
+	jump = 3.25
+	maxaccel = 5.5
 
 	mapcontent = {
 		objectlist = {
 
 		},
 		interactablelist = {
-
+			
 		},
 		entitylist = {
-
+			
 		},
 	}
 
@@ -128,6 +128,7 @@ end
 function newPlayer(xx,yy)
 	local player = {}
 	player.name = "player"
+	player.launcharrow = 416
 	player.spval = 256
 	player.sprhead = 288
 	player.spreyes = 352
@@ -135,7 +136,8 @@ function newPlayer(xx,yy)
 						idle = {p = {288, 290}, e = {352, 358}, p1 = {320, 288}, e1 = {384, 352}},
 						fall = {320, e = {384, 388}},
 						crouch = {322, 390},
-						run = {256, 258, 260, 262, 264}
+						run = {256, 258, 260, 262, 264},
+						arrowpoint = {416, 418}
 					 }
 	player.x = xx*8
 	player.y = yy*8
@@ -192,9 +194,6 @@ function newGun(player)
 	gun.state = nil
 	gun.draw = true
 	gun.dotilecollide = {false,false,false}
-	gun.doportalcollide = false
-	gun.portalcollidelen = 0
-	gun.excludeportal = true
 	gun.outline = {false,12}
 	gun.ignore = true
 	gun.type="gun"
@@ -457,11 +456,36 @@ function playerUpdate()
 	end
 	if btn(1) or key(63) then
 		player.state = "crouch"
-		player.vx = player.vx*0.7
-		if player.vy > 0 then
-			player.vy = player.vy*(0.9)
+		--player.vx = player.vx*0.7
+		--if player.vy > 0 then
+		--	player.vy = player.vy*(0.9)
+		--else
+		--	player.vy = player.vy*(0.8)
+		--end
+		if player.x < gmouse().x then
+			if gmouse().x < 0 or gmouse().x >= 240 or gmouse().y < 0 or gmouse().y >= 136 then
+				trace("is out of window")
+			else
+				local angle, l = getAngleDistance(player,gmouse())
+				if gmouse().vy == 0 then
+					if (math.deg(angle) > 15 and math.deg(angle) < 90) then
+						angle = math.rad(25)
+					elseif (math.deg(angle) > 90 and math.deg(angle) < 181) then
+						angle = math.rad(165)
+					end
+				end
+				local tx = (math.sqrt((gmouse().x - player.x) * (gmouse().x - player.x)) * math.cos(angle) + player.x)
+				local ty = (math.sqrt((gmouse().y - player.y) * (gmouse().y - player.y)) * math.sin(angle) + player.y)
+				player.vx = tx
+				player.vy = ty
+			end
 		else
-			player.vy = player.vy*(0.8)
+			if gmouse().x < 0 or gmouse().x >= 240 or gmouse().y < 0 or gmouse().y >= 136 then
+				trace("is out of window")
+			else
+				player.vx = player.vx - player.ax * math.sqrt((gmouse().x - player.x) * (gmouse().x - player.x))//10
+				player.vy = player.vy - player.ay * math.sqrt((gmouse().y - player.y) * (gmouse().y - player.y))//20
+			end
 		end
 	end
 
@@ -548,6 +572,7 @@ function playerSpriteState()
 		player.spval = 266
 		player.sprhead = player.splist.crouch[1]
 		player.spreyes = player.splist.crouch[2]
+		player.arrowpoint = player.splist.arrowpoint[math.floor(tick/24 % #player.splist.arrowpoint) + 1]
 		if btnp(1) or keyp(63) then
 			
 			--timeelapsed = timeelapsed + 1
@@ -560,9 +585,18 @@ function playerSpriteState()
 			--	end
 			--	--player.vx = player.vx * (player.roll%2)
 			--end
-			player.vx = player.vx * ()
 		end
 	end
+end
+
+function getAngleDistance(sprite,object)
+	local xval = (object.x - sprite.x) * (object.x - sprite.x) 
+	local yval = (object.y-sprite.y) * (object.y-sprite.y)
+
+	local angle = math.atan2(object.y - sprite.y, object.x - sprite.x)
+	local length = (math.sqrt(xval + yval))
+
+	return angle, length
 end
 
 function getmaptiles()
@@ -579,6 +613,7 @@ function drawFrame()
 	map(getmaptiles())
 	map(getmaptiles())
 	print(player.x/25,1,64,2)
+	print(getAngleDistance(player,gmouse()),1,96,2)
 
 	for _,val in ipairs(renderorder) do
 		for _,sprite in pairs(val) do
@@ -593,6 +628,11 @@ function drawFrame()
 		spr(player.spval, player.x - 8, player.y - 8, 0, 1, boolToVal(player.flip), 0, 2, 2)
 		spr(player.sprhead, player.x - 8, player.y - 8, 0, 1, boolToVal(player.flip), 0, 2, 2)
 		spr(player.spreyes, player.x - 8, player.y - 8, 0, 1, boolToVal(player.flip), 0, 2, 2)
+		if player.state == "crouch" then
+			poke(0x3FFB,109)
+			drawLine(gmouse(), player)
+			spr(player.launcharrow, gmouse().x - 4, gmouse().y - 4, 0, 1, boolToVal(player.flip), 0, 2, 2)
+		end	
 	elseif player.rotate%2 > 0 then
 		spr(324, player.x - 8, player.y - 8, 0, 1, boolToVal(player.flip), player.rotate, 2, 2)
 	else
@@ -602,6 +642,17 @@ end
 
 function collision()
 	collideTile()
+end
+
+function drawLine(p1,p2)
+	line(p1.x +11 * boolToVal(player.flip),p1.y+7,p2.x+4 * -boolToVal(player.flip),p2.y+5,11)
+	line(p1.x +11 * boolToVal(player.flip),p1.y+6,p2.x+4 * -boolToVal(player.flip),p2.y+4,10)
+	line(p1.x +11 * boolToVal(player.flip),p1.y+5,p2.x+4 * -boolToVal(player.flip),p2.y+3,9)
+	line(p1.x +11 * boolToVal(player.flip),p1.y+4,p2.x+4 * -boolToVal(player.flip),p2.y+4,8)
+	line(p1.x +11 * boolToVal(player.flip),p1.y+4,p2.x+4 * -boolToVal(player.flip),p2.y+4,8)
+	line(p1.x +11 * boolToVal(player.flip),p1.y+3,p2.x+4 * -boolToVal(player.flip),p2.y+3,9)
+	line(p1.x +11 * boolToVal(player.flip),p1.y+2,p2.x+4 * -boolToVal(player.flip),p2.y+4,10)
+	line(p1.x +11 * boolToVal(player.flip),p1.y+1,p2.x+4 * -boolToVal(player.flip),p2.y+5,11)
 end
 
 function TIC()
@@ -816,6 +867,10 @@ end
 -- 153:0000000000ef000000f000000000000000000000000000000000000000000000
 -- 154:0000000000000000000000ef0000000000000000000000000000000000000000
 -- 155:000000000000000000ef00000000000000000000000000000000000000000000
+-- 160:c0000000cc000000ccc00000cccc0000ccccc000bccbcc00bcbbbcc0bbbbbbcc
+-- 162:4000000044000000444000004444000044444000344344003433344033333344
+-- 176:bababaaaaabaaaa09aaa99009999900099990000999000009900000090000000
+-- 178:3232322222322220122211001111100011110000111000001100000010000000
 -- 205:dde000ffdffe0fffffffffffffffffee0fffff440ffff444ffff4444ffff4444
 -- 206:fee00000fffff000eeffff0044efffe0444efe404344e43e4434434f4f444f4f
 -- 207:0000000000000000000000000000000000000000dd000000f000000000000000
